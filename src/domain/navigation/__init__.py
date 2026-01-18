@@ -1,0 +1,1 @@
+from domain.navigation.move_target import *
