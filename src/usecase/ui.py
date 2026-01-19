@@ -55,14 +55,15 @@ def select_mode() -> int:
     print("=" * 50)
     print("  1: ループシーケンサモード（DTM風 - ボタンで記録/再生を制御）")
     print("  2: 重奏モード（2秒遅れで追従演奏）")
+    print("  3: 動作確認モード（座標取得・磁石検知・移動テスト）")
     print("=" * 50)
 
     while True:
         try:
-            choice = input("モード番号を入力 (1 or 2): ").strip()
-            if choice in ["1", "2"]:
+            choice = input("モード番号を入力 (1, 2, 3): ").strip()
+            if choice in ["1", "2", "3"]:
                 return int(choice)
-            print("⚠️ 1 または 2 を入力してください")
+            print("⚠️ 1, 2, または 3 を入力してください")
         except KeyboardInterrupt:
             print("\nキャンセルされました")
             return 0

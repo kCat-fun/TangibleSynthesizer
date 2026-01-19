@@ -2,7 +2,7 @@
 import asyncio
 
 from usecase import input_toio_count, select_mode
-from usecase import LoopSequencerMode, DuetMode
+from usecase import LoopSequencerMode, DuetMode, DebugMode
 
 
 async def main():
@@ -22,10 +22,14 @@ async def main():
             return
         sequencer = LoopSequencerMode(toio_count)
         await sequencer.run()
-    else:
+    elif mode == 2:
         # 重奏モード
         duet = DuetMode()
         await duet.run()
+    elif mode == 3:
+        # 動作確認モード
+        debug = DebugMode()
+        await debug.run()
 
 
 if __name__ == "__main__":
