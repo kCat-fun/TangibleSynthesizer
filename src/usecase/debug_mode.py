@@ -29,7 +29,11 @@ class DebugMode:
     async def _connect(self):
         """toio接続"""
         print("\ntoioに接続中...")
-        self.controller = CubeController(TOIO_ADDRESSES[0])
+        self.controller = CubeController(
+            address=TOIO_ADDRESSES[0],
+            name="debug_toio",
+            color=Color(0, 255, 0)
+        )
         await self.controller.connect()
         await self.controller.set_indicator(color=Color(0, 255, 0))  # 緑 = 接続完了
         print("✅ 接続完了")
