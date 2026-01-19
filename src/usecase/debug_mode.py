@@ -125,16 +125,32 @@ class DebugMode:
 
         async def magnet_loop():
             last_state = None
+
             while not stop_event.is_set():
-                magnet = await self.controller.sensing.check_magnet_below()
-                if magnet != last_state:
-                    if magnet:
-                        print("  🧲 磁石検知！")
-                        await self.controller.set_indicator(color=Color(255, 0, 255))  # マゼンタ
-                    else:
-                        print("  ○ 磁石なし")
-                        await self.controller.set_indicator(color=Color(0, 255, 255))  # シアン
-                    last_state = magnet
+                try:
+                    # 磁気センサー情報を直接リクエスト
+                    await self.controller.cube.api.sensor.request_magnetic_sensor_information()
+                    await asyncio.sleep(0.05)  # レスポンス待ち
+
+                    # 磁気センサーの生データを取得
+                    sensor = self.controller.sensing.get_magnetic_sensor()
+                    magnet_state = sensor.state  # 0: なし, 1-6: 磁石の向き
+                    strength = sensor.strength
+
+                    # 磁石検知判定（state が 1以上 または strength が閾値以上）
+                    magnet_detected = magnet_state > 0 or strength > 0
+
+                    # 状態変化時のみ表示
+                    if magnet_detected != last_state:
+                        if magnet_detected:
+                            print(f"  🧲 磁石検知！ (state={magnet_state}, strength={strength})")
+                            await self.controller.set_indicator(color=Color(255, 0, 255))  # マゼンタ
+                        else:
+                            print("  ○ 磁石なし")
+                            await self.controller.set_indicator(color=Color(0, 255, 255))  # シアン
+                        last_state = magnet_detected
+                except Exception as e:
+                    print(f"  エラー: {e}")
                 await asyncio.sleep(0.1)
 
         task = asyncio.create_task(magnet_loop())
