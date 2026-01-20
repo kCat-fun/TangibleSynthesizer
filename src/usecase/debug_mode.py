@@ -46,7 +46,8 @@ class DebugMode:
             print("-" * 40)
             print("  1: 座標取得（リアルタイム表示）")
             print("  2: 磁石検知（リアルタイム表示）")
-            print("  3: 座標移動（入力した座標へ移動）")
+            print("  3: notification磁石検知（リアルタイム表示）")
+            print("  4: 座標移動（入力した座標へ移動）")
             print("  q: 終了")
             print("-" * 40)
 
@@ -57,6 +58,8 @@ class DebugMode:
                 elif choice == "2":
                     await self._magnet_check()
                 elif choice == "3":
+                    await self._notification_handler_magnetic_sensor()
+                elif choice == "4":
                     await self._move_to_position()
                 elif choice == "q":
                     print("動作確認モードを終了します")
@@ -130,7 +133,7 @@ class DebugMode:
                 try:
                     # 磁気センサー情報を直接リクエスト
                     await self.controller.cube.api.sensor.request_magnetic_sensor_information()
-                    await asyncio.sleep(0.05)  # レスポンス待ち
+                    # await asyncio.sleep(0.05)  # レスポンス待ち
 
                     # 磁気センサーの生データを取得
                     sensor = self.controller.sensing.get_magnetic_sensor()
@@ -151,7 +154,7 @@ class DebugMode:
                         last_state = magnet_detected
                 except Exception as e:
                     print(f"  エラー: {e}")
-                await asyncio.sleep(0.1)
+                # await asyncio.sleep(0.05)
 
         task = asyncio.create_task(magnet_loop())
 
@@ -161,6 +164,52 @@ class DebugMode:
 
         await self.controller.set_indicator(color=Color(0, 255, 0))
         print("磁石検知モード終了")
+
+    async def _notification_handler_magnetic_sensor(self):
+        """磁気センサー通知ハンドラ"""
+        """磁石検知モード"""
+        print("\n" + "=" * 50)
+        print("notification磁石検知モード")
+        print("  toioの下に磁石を近づけると検知します")
+        print("  Enter を押すと終了")
+        print("=" * 50)
+
+        # シアンLED = 磁石検知モード
+        await self.controller.set_indicator(color=Color(0, 255, 255))
+
+        stop_event = asyncio.Event()
+
+        async def magnet_loop():
+            last_state = None
+
+            while not stop_event.is_set():
+                try:
+                    # 磁気センサーの生データを取得
+                    sensor = await self.controller.sensing.magnet_class.magnet_position()
+                    magnet_state = sensor.state  # 0: なし, 1-6: 磁石の向き
+                    strength = sensor.strength
+
+                    # 磁石検知判定（state が 1以上 または strength が閾値以上）
+                    magnet_detected = magnet_state > 0 or strength > 0
+
+                    # 状態変化時のみ表示
+                    if magnet_detected != last_state:
+                        if magnet_detected:
+                            print(f"  🧲 磁石検知！ (state={magnet_state}, strength={strength})")
+                            await self.controller.set_indicator(color=Color(255, 0, 255))  # マゼンタ
+                        else:
+                            print("  ○ 磁石なし")
+                            await self.controller.set_indicator(color=Color(0, 255, 255))  # シアン
+                        last_state = magnet_detected
+                except Exception as e:
+                    print(f"  エラー: {e}")
+                # await asyncio.sleep(0.05)
+
+        task = asyncio.create_task(magnet_loop())
+
+        await asyncio.get_event_loop().run_in_executor(None, input, "")
+        stop_event.set()
+        await task        
 
     async def _move_to_position(self):
         """座標移動モード"""

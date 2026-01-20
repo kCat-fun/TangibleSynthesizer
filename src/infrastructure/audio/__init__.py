@@ -1,4 +1,4 @@
-from .synthesizer import SynthesizerSound
+from .synthesizer import SynthesizerSound, WaveType
 from .countdown import CountdownSound
 
-__all__ = ['SynthesizerSound', 'CountdownSound']
+__all__ = ['SynthesizerSound', 'WaveType', 'CountdownSound']

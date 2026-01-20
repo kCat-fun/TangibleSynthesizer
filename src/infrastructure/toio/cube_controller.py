@@ -52,7 +52,7 @@ class CubeController:
         # 磁気センサーを有効化（MagneticForce: 磁力検出モード - より詳細な情報を取得）
         await self.cube.api.configuration.set_magnetic_sensor(
             function_type=MagneticSensorFunction.MagneticForce,  # MagnetStateからMagneticForceに変更
-            interval_ms=10,  # 最小間隔（20ms x 1 = 20ms）
+            interval_ms=5,  # 最小間隔（20ms x 1 = 20ms）
             condition=MagneticSensorCondition.Always  # 常に通知
         )
         

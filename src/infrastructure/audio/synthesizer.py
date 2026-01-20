@@ -1,8 +1,16 @@
 """シンセサイザー音生成モジュール"""
 import threading
+from enum import Enum
 from typing import Optional
 import numpy as np
 import pyaudio
+
+
+class WaveType(Enum):
+    """波形の種類"""
+    SINE = "sine"          # サイン波
+    SAWTOOTH = "sawtooth"  # のこぎり波
+    SQUARE = "square"      # 矩形波
 
 
 class SynthesizerSound:
@@ -26,7 +34,10 @@ class SynthesizerSound:
     SAMPLE_RATE = 44100
     CHUNK_SIZE = 1024
 
-    def __init__(self):
+    def __init__(self, wave_type: WaveType = WaveType.SINE):
+        # 波形タイプ
+        self._wave_type = wave_type
+
         # 現在の周波数と音量（スレッド間で共有）
         self._current_frequency: float = (self.FREQ_MIN + self.FREQ_MAX) / 2
         self._current_volume: float = 0.5  # 0.0 ~ 1.0
@@ -75,12 +86,25 @@ class SynthesizerSound:
             self._pa = None
 
     def _generate_samples(self, frequency: float, volume: float) -> np.ndarray:
-        """正弦波のサンプルを生成（位相を連続的に保持）"""
+        """波形のサンプルを生成（位相を連続的に保持）"""
         # 1チャンクあたりの時間
         t = np.arange(self.CHUNK_SIZE) / self.SAMPLE_RATE
 
-        # 位相を連続的に保持して正弦波を生成
-        samples = volume * np.sin(2 * np.pi * frequency * t + self._phase)
+        # 位相を計算
+        phase_array = 2 * np.pi * frequency * t + self._phase
+
+        # 波形タイプに応じてサンプルを生成
+        if self._wave_type == WaveType.SINE:
+            # サイン波
+            samples = volume * np.sin(phase_array)
+        elif self._wave_type == WaveType.SAWTOOTH:
+            # のこぎり波: 位相を-1〜1にマッピング
+            samples = volume * (2 * (phase_array / (2 * np.pi) % 1) - 1)
+        elif self._wave_type == WaveType.SQUARE:
+            # 矩形波: サイン波の符号
+            samples = volume * np.sign(np.sin(phase_array))
+        else:
+            samples = volume * np.sin(phase_array)
 
         # 次のチャンクのための位相を更新
         self._phase += 2 * np.pi * frequency * self.CHUNK_SIZE / self.SAMPLE_RATE

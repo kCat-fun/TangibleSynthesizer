@@ -5,7 +5,7 @@ from typing import List, Dict, Optional
 from toio import Color
 
 from domain import ToioLoopState, ToioLooper, MotionRecorder
-from infrastructure import CubeController, SynthesizerSound
+from infrastructure import CubeController, SynthesizerSound, WaveType
 from .ui import TOIO_ADDRESSES, start_input_thread
 
 # 各toioの色
@@ -16,6 +16,13 @@ TOIO_COLORS = [
     Color(255, 255, 0),  # 黄
     Color(255, 0, 255),  # マゼンタ
     Color(0, 255, 255),  # シアン
+]
+
+# 各toioの波形タイプ
+TOIO_WAVE_TYPES = [
+    WaveType.SINE,      # toio1: サイン波
+    WaveType.SAWTOOTH,  # toio2: のこぎり波
+    WaveType.SQUARE,    # toio3: 矩形波
 ]
 
 
@@ -133,6 +140,13 @@ class LoopSequencerMode:
         for i, ctrl in enumerate(self.controllers):
             self.loopers.append(ToioLooper(ctrl, i))
 
+        # 波形の割り当てを表示
+        wave_names = {WaveType.SINE: "サイン波", WaveType.SAWTOOTH: "のこぎり波", WaveType.SQUARE: "矩形波"}
+        print("\n波形の割り当て:")
+        for i in range(self.toio_count):
+            wave_type = TOIO_WAVE_TYPES[i % len(TOIO_WAVE_TYPES)]
+            print(f"  toio_{i+1}: {wave_names[wave_type]}")
+
         self.synchronizer.set_loopers(self.loopers)
 
     async def _setup_button_handlers(self):
@@ -159,8 +173,9 @@ class LoopSequencerMode:
         print("\n操作方法:")
         print("  - toioのボタンを押す → 記録開始（赤LED）")
         print("  - toioを手で動かして音を作成")
-        print("  - もう一度ボタンを押す → 記録終了、2秒後ループ再生開始（緑LED）")
-        print("  - 再生中のtoioのボタンを押す → 一時停止（黄LED）")
+        print("  - もう一度ボタンを押す → 記録終了、待機（黄LED）")
+        print("  - 待機中にボタンを押す → ループ再生開始（緑LED）")
+        print("  - 再生中にボタンを押す → 一時停止（黄LED）")
         print("  - 一時停止中にボタンを押す → 再記録開始")
         print("  - 終了するには 'q' を入力してEnter")
         print("=" * 50)
@@ -218,7 +233,10 @@ class LoopSequencerMode:
             await self._start_recording(looper)
 
         elif looper.state == ToioLoopState.RECORDING:
-            await self._stop_recording_and_start_loop(looper)
+            await self._stop_recording(looper)
+
+        elif looper.state == ToioLoopState.WAITING:
+            await self._start_playback(looper)
 
         elif looper.state == ToioLoopState.PLAYING:
             await self._pause_looper(looper)
@@ -239,14 +257,15 @@ class LoopSequencerMode:
         looper.reset_for_recording()
 
         if looper.synth is None:
-            looper.synth = SynthesizerSound()
+            wave_type = TOIO_WAVE_TYPES[looper.index % len(TOIO_WAVE_TYPES)]
+            looper.synth = SynthesizerSound(wave_type=wave_type)
             looper.synth.start()
         looper.synth.unmute()
 
         print(f"🔴 {looper.controller.name} 記録開始 - toioを手で動かしてください")
 
-    async def _stop_recording_and_start_loop(self, looper: ToioLooper):
-        """録音終了してループ再生開始"""
+    async def _stop_recording(self, looper: ToioLooper):
+        """録音終了して待機状態へ"""
         if looper.recorder:
             looper.recorder.stop_recording()
             looper.frames = looper.recorder.get_frames()
@@ -260,16 +279,16 @@ class LoopSequencerMode:
             await looper.controller.set_indicator(color=Color(100, 100, 100))
             return
 
-        print(f"⏸️ {looper.controller.name} 2秒後にループ再生開始...")
+        looper.state = ToioLoopState.WAITING
         await looper.controller.set_indicator(color=Color(255, 255, 0))
-        await asyncio.sleep(2)
+        print(f"⏸️ {looper.controller.name} 記録完了 ({len(looper.frames)}フレーム, {looper.get_duration():.1f}秒) - ボタンを押すとループ再生開始")
 
+    async def _start_playback(self, looper: ToioLooper):
+        """ループ再生開始"""
         looper.state = ToioLoopState.PLAYING
         looper.stop_event.clear()
-        looper.is_ready_for_next_loop = True  # 最初から準備完了
-        self.synchronizer.update_max_duration()
         looper.play_task = asyncio.create_task(self._playback_task(looper))
-        print(f"🟢 {looper.controller.name} ループ再生開始 ({len(looper.frames)}フレーム, {looper.get_duration():.1f}秒)")
+        print(f"🟢 {looper.controller.name} ループ再生開始")
 
     async def _pause_looper(self, looper: ToioLooper):
         """ループ再生を一時停止"""

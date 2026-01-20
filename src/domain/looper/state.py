@@ -6,5 +6,6 @@ class ToioLoopState(Enum):
     """toioのループ状態"""
     IDLE = "idle"           # 待機中（未記録）
     RECORDING = "recording" # 記録中
+    WAITING = "waiting"     # 記録完了、再生待ち
     PLAYING = "playing"     # ループ再生中
     PAUSED = "paused"       # 一時停止中
