@@ -2,7 +2,7 @@
 import asyncio
 
 from usecase import input_toio_count, select_mode
-from usecase import LoopSequencerMode, DuetMode, DebugMode
+from usecase import LoopSequencerMode, DuetMode, DebugMode, PlaybackMode
 
 
 async def main():
@@ -30,6 +30,10 @@ async def main():
         # 動作確認モード
         debug = DebugMode()
         await debug.run()
+    elif mode == 4:
+        # 保存データ再生モード
+        playback = PlaybackMode()
+        await playback.run()
 
 
 if __name__ == "__main__":

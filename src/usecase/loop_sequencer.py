@@ -1,5 +1,8 @@
 """ループシーケンサモード"""
 import asyncio
+import json
+import os
+from datetime import datetime
 from typing import List, Dict, Optional
 
 from toio import Color
@@ -216,15 +219,6 @@ class LoopSequencerMode:
             looper.recorder.record_frame(x=pos.x, y=pos.y, angle=pos.angle)
             if looper.synth:
                 looper.synth.update_position(pos.x, pos.y)
-
-                # toio3は磁石検知時のみ音を鳴らす
-                if looper.index == 2:
-                    sensor = await looper.controller.sensing.magnet_class.magnet_position()
-                    magnet_detected = sensor.state > 0 or sensor.strength > 0
-                    if magnet_detected:
-                        looper.synth.unmute()
-                    else:
-                        looper.synth.mute()
         else:
             # 位置検出できなかった
             if looper.is_position_valid:
@@ -404,20 +398,58 @@ class LoopSequencerMode:
                 if looper.synth:
                     looper.synth.update_position(frame.x, frame.y)
 
-                    # toio3は磁石検知時のみ音を鳴らす
-                    if looper.index == 2:
-                        sensor = await looper.controller.sensing.magnet_class.magnet_position()
-                        magnet_detected = sensor.state > 0 or sensor.strength > 0
-                        if magnet_detected:
-                            looper.synth.unmute()
-                        else:
-                            looper.synth.mute()
-
             if looper.synth:
                 looper.synth.mute()
 
             # ループ終了 - 少し待ってから次のループへ
             await asyncio.sleep(0.1)
+
+    def _save_recording(self) -> Optional[str]:
+        """記録データをJSONファイルに保存"""
+        # 記録データがあるtoioを確認
+        toios_with_data = [l for l in self.loopers if len(l.frames) > 0]
+        if not toios_with_data:
+            return None
+
+        # 保存ディレクトリを作成
+        save_dir = os.path.join(os.path.dirname(__file__), "..", "..", "data", "recordings")
+        os.makedirs(save_dir, exist_ok=True)
+
+        # ファイル名を生成
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        filename = f"recording_{timestamp}.json"
+        filepath = os.path.join(save_dir, filename)
+
+        # データを構築
+        data = {
+            "created_at": datetime.now().isoformat(),
+            "toio_count": self.toio_count,
+            "toios": []
+        }
+
+        for looper in self.loopers:
+            toio_data = {
+                "index": looper.index,
+                "name": looper.controller.name,
+                "wave_type": TOIO_WAVE_TYPES[looper.index % len(TOIO_WAVE_TYPES)].value,
+                "frames": [
+                    {
+                        "x": f.x,
+                        "y": f.y,
+                        "angle": f.angle,
+                        "timestamp": f.timestamp,
+                        "speed": f.speed
+                    }
+                    for f in looper.frames
+                ]
+            }
+            data["toios"].append(toio_data)
+
+        # ファイルに保存
+        with open(filepath, "w", encoding="utf-8") as f:
+            json.dump(data, f, ensure_ascii=False, indent=2)
+
+        return filepath
 
     async def _cleanup(self):
         """クリーンアップ"""
@@ -436,6 +468,11 @@ class LoopSequencerMode:
                     looper.play_task.cancel()
             if looper.synth:
                 looper.synth.stop()
+
+        # 記録データを保存
+        saved_path = self._save_recording()
+        if saved_path:
+            print(f"📁 記録データを保存しました: {saved_path}")
 
         for controller in self.controllers:
             await controller.disconnect()
