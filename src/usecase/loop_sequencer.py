@@ -216,6 +216,15 @@ class LoopSequencerMode:
             looper.recorder.record_frame(x=pos.x, y=pos.y, angle=pos.angle)
             if looper.synth:
                 looper.synth.update_position(pos.x, pos.y)
+
+                # toio3は磁石検知時のみ音を鳴らす
+                if looper.index == 2:
+                    sensor = await looper.controller.sensing.magnet_class.magnet_position()
+                    magnet_detected = sensor.state > 0 or sensor.strength > 0
+                    if magnet_detected:
+                        looper.synth.unmute()
+                    else:
+                        looper.synth.mute()
         else:
             # 位置検出できなかった
             if looper.is_position_valid:
@@ -248,9 +257,15 @@ class LoopSequencerMode:
             await self._start_recording(looper)
 
     async def _start_recording(self, looper: ToioLooper):
-        """録音開始"""
+        """録音開始（0.5秒のカウントダウン後）"""
+        # 準備中表示
+        await looper.controller.set_indicator(color=Color(255, 255, 0))  # 黄色
+        print(f"⏳ {looper.controller.name} 0.5秒後に記録開始...")
+        await asyncio.sleep(0.5)
+
+        # 記録開始
         looper.state = ToioLoopState.RECORDING
-        await looper.controller.set_indicator(color=Color(255, 0, 0))
+        await looper.controller.set_indicator(color=Color(255, 0, 0))  # 赤
 
         looper.recorder = MotionRecorder()
         looper.recorder.start_recording()
@@ -388,6 +403,15 @@ class LoopSequencerMode:
 
                 if looper.synth:
                     looper.synth.update_position(frame.x, frame.y)
+
+                    # toio3は磁石検知時のみ音を鳴らす
+                    if looper.index == 2:
+                        sensor = await looper.controller.sensing.magnet_class.magnet_position()
+                        magnet_detected = sensor.state > 0 or sensor.strength > 0
+                        if magnet_detected:
+                            looper.synth.unmute()
+                        else:
+                            looper.synth.mute()
 
             if looper.synth:
                 looper.synth.mute()
