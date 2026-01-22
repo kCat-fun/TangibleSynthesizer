@@ -32,6 +32,9 @@ class PlaybackMode:
         self.quit_event = asyncio.Event()
         self.input_thread = None
         self.toio_count = 0
+        # toio3用: 磁石検知トリガー
+        self.was_magnet_detected: List[bool] = []
+        self.magnet_sound_until: List[Optional[float]] = []
 
     async def run(self):
         """メイン実行"""
@@ -156,6 +159,9 @@ class PlaybackMode:
             synth = SynthesizerSound(wave_type=self.wave_types[i])
             synth.start()
             self.synths.append(synth)
+            # toio3用: 磁石検知状態を初期化
+            self.was_magnet_detected.append(False)
+            self.magnet_sound_until.append(None)
 
     async def _playback_loop(self):
         """再生ループ"""
@@ -219,7 +225,9 @@ class PlaybackMode:
                 return
 
             await controller.set_indicator(color=Color(0, 255, 0))
-            synth.unmute()
+            # toio3は磁石検知時のみ音を鳴らすのでここではunmuteしない
+            if index != 2:
+                synth.unmute()
 
             # フレーム再生
             event_loop = asyncio.get_event_loop()
@@ -259,8 +267,30 @@ class PlaybackMode:
 
                 synth.update_position(frame.x, frame.y)
 
+                # toio3は磁石検知時に0.1秒だけ音を鳴らす
+                if index == 2:
+                    current_time = event_loop.time()
+                    sensor = await controller.sensing.magnet_class.magnet_position()
+                    magnet_detected = sensor.state > 0 or sensor.strength > 0
+
+                    # 磁石検知の立ち上がりエッジで音を開始
+                    if magnet_detected and not self.was_magnet_detected[index]:
+                        self.magnet_sound_until[index] = current_time + 0.1
+                        synth.unmute()
+
+                    self.was_magnet_detected[index] = magnet_detected
+
+                    # 0.1秒経過したらミュート
+                    if self.magnet_sound_until[index] and current_time >= self.magnet_sound_until[index]:
+                        synth.mute()
+                        self.magnet_sound_until[index] = None
+
             synth.mute()
             await asyncio.sleep(0.1)
+            # toio3の磁石検知状態をリセット
+            if index == 2:
+                self.was_magnet_detected[index] = False
+                self.magnet_sound_until[index] = None
 
     async def _cleanup(self):
         """クリーンアップ"""

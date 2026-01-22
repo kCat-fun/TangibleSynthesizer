@@ -23,19 +23,45 @@ pytest .
 ## Modes
 
 ### Mode 1: ループシーケンサモード（DTM風）
-- 各toioのボタンを押して記録開始（赤LED）
+- 各toioのボタンを押すと0.5秒後に記録開始（赤LED）
 - toioを手で動かして音を作成
 - もう一度ボタンを押すと記録終了、待機（黄LED）
 - 待機中にボタンを押すとループ再生開始（緑LED）
 - 再生中にボタンを押すと一時停止（黄LED）
 - 一時停止中にボタンを押すと再記録
 - 複数toioが独立してループ再生（タイミング同期なし）
+- 各toioに異なる波形が割り当てられる:
+  - toio1: サイン波
+  - toio2: のこぎり波
+  - toio3: 矩形波
+- 終了時に記録データをJSONファイルに自動保存
 - 'q' + Enter で終了
 
 ### Mode 2: 重奏モード
 - serve_toioを手で動かすと、recive_toioが指定秒数（デフォルト2秒）遅れで追従
 - 両方のtoioで位置に応じた音が鳴る
 - ボタンを押すと終了
+
+### Mode 3: 動作確認モード
+- 1台のtoioを使用して各機能をテスト
+- 座標取得（リアルタイム表示）
+- 磁石検知（リアルタイム表示）
+- 座標移動（入力した座標へ移動）
+
+### Mode 4: 保存データ再生モード
+- 過去に保存した記録データを選択して再生
+- 各toioが記録通りに動き、音を再生
+- 'q' + Enter で終了
+
+## State Transitions (Mode 1)
+
+```
+IDLE → (ボタン) → RECORDING → (ボタン) → WAITING → (ボタン) → PLAYING
+                                                              ↓
+                                              (ボタン) ← PAUSED ← (ボタン)
+                                                   ↓
+                                              RECORDING
+```
 
 ## Architecture
 
@@ -50,19 +76,24 @@ src/
 │   │   ├── cube_action.py            # モーター制御、移動コマンド
 │   │   └── cube_sensing.py           # 位置・磁気センサー読み取り
 │   └── audio/                        # 音声合成
-│       ├── synthesizer.py            # SynthesizerSound（位置→周波数/音量）
+│       ├── synthesizer.py            # SynthesizerSound（位置→周波数/音量、波形タイプ対応）
 │       └── countdown.py              # CountdownSound（カウントダウン音）
 ├── domain/                           # ビジネスロジック層
 │   ├── recording/                    # 動き記録
 │   │   ├── frame.py                  # RecordedFrame（1フレームのデータ）
 │   │   └── recorder.py               # MotionRecorder（記録管理）
 │   └── looper/                       # ループ制御
-│       ├── state.py                  # ToioLoopState（状態Enum）
+│       ├── state.py                  # ToioLoopState（IDLE/RECORDING/WAITING/PLAYING/PAUSED）
 │       └── toio_looper.py            # ToioLooper（各toioのループ管理）
 └── usecase/                          # ユースケース層
     ├── loop_sequencer.py             # LoopSequencerMode（DTM風モード）
     ├── duet_mode.py                  # DuetMode（重奏モード）
+    ├── debug_mode.py                 # DebugMode（動作確認モード）
+    ├── playback_mode.py              # PlaybackMode（保存データ再生モード）
     └── ui.py                         # UI関数、toioアドレス設定
+
+data/
+└── recordings/                       # 記録データ保存先（JSON形式）
 ```
 
 ## Key Technical Details
@@ -71,7 +102,28 @@ src/
 - **Threading**: 音声合成は専用スレッドで実行（SynthesizerSound）
 - **Recording rate**: 50Hz（0.02秒間隔）で位置記録、閾値ベースのフィルタリング
 - **Audio mapping**: Y座標→周波数(261Hz〜1975Hz)、X座標→音量
+- **Wave types**: サイン波(SINE)、のこぎり波(SAWTOOTH)、矩形波(SQUARE)
 - **Position detection**: 位置検出できない間は音をミュート、記録時間を補正
+- **Data persistence**: 終了時に記録データをJSON形式で自動保存
+
+## JSON Recording Format
+
+```json
+{
+  "created_at": "2024-01-01T12:00:00",
+  "toio_count": 3,
+  "toios": [
+    {
+      "index": 0,
+      "name": "toio_1",
+      "wave_type": "sine",
+      "frames": [
+        {"x": 100, "y": 200, "angle": 0, "timestamp": 0.0, "speed": 100}
+      ]
+    }
+  ]
+}
+```
 
 ## Dependencies
 

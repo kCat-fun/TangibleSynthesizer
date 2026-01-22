@@ -212,13 +212,31 @@ class LoopSequencerMode:
                 lost_duration = current_time - looper.position_lost_time
                 looper.recorder.start_time += lost_duration
                 looper.position_lost_time = None
-                if looper.synth:
+                # toio3は磁石検知時のみ音を鳴らすのでここではunmuteしない
+                if looper.synth and looper.index != 2:
                     looper.synth.unmute()
 
             looper.is_position_valid = True
             looper.recorder.record_frame(x=pos.x, y=pos.y, angle=pos.angle)
             if looper.synth:
                 looper.synth.update_position(pos.x, pos.y)
+
+                # toio3は磁石検知時に0.1秒だけ音を鳴らす
+                if looper.index == 2:
+                    sensor = await looper.controller.sensing.magnet_class.magnet_position()
+                    magnet_detected = sensor.state > 0 or sensor.strength > 0
+
+                    # 磁石検知の立ち上がりエッジで音を開始
+                    if magnet_detected and not looper.was_magnet_detected:
+                        looper.magnet_sound_until = current_time + 0.1
+                        looper.synth.unmute()
+
+                    looper.was_magnet_detected = magnet_detected
+
+                    # 0.1秒経過したらミュート
+                    if looper.magnet_sound_until and current_time >= looper.magnet_sound_until:
+                        looper.synth.mute()
+                        looper.magnet_sound_until = None
         else:
             # 位置検出できなかった
             if looper.is_position_valid:
@@ -269,7 +287,9 @@ class LoopSequencerMode:
             wave_type = TOIO_WAVE_TYPES[looper.index % len(TOIO_WAVE_TYPES)]
             looper.synth = SynthesizerSound(wave_type=wave_type)
             looper.synth.start()
-        looper.synth.unmute()
+        # toio3は磁石検知時のみ音を鳴らすのでここではunmuteしない
+        if looper.index != 2:
+            looper.synth.unmute()
 
         print(f"🔴 {looper.controller.name} 記録開始 - toioを手で動かしてください")
 
@@ -357,7 +377,8 @@ class LoopSequencerMode:
             await looper.controller.set_indicator(color=Color(0, 255, 0))
 
             # フレーム再生
-            if looper.synth:
+            # toio3は磁石検知時のみ音を鳴らすのでここではunmuteしない
+            if looper.synth and looper.index != 2:
                 looper.synth.unmute()
 
             event_loop = asyncio.get_event_loop()
@@ -397,6 +418,24 @@ class LoopSequencerMode:
 
                 if looper.synth:
                     looper.synth.update_position(frame.x, frame.y)
+
+                    # toio3は磁石検知時に0.1秒だけ音を鳴らす
+                    if looper.index == 2:
+                        current_time = event_loop.time()
+                        sensor = await looper.controller.sensing.magnet_class.magnet_position()
+                        magnet_detected = sensor.state > 0 or sensor.strength > 0
+
+                        # 磁石検知の立ち上がりエッジで音を開始
+                        if magnet_detected and not looper.was_magnet_detected:
+                            looper.magnet_sound_until = current_time + 0.1
+                            looper.synth.unmute()
+
+                        looper.was_magnet_detected = magnet_detected
+
+                        # 0.1秒経過したらミュート
+                        if looper.magnet_sound_until and current_time >= looper.magnet_sound_until:
+                            looper.synth.mute()
+                            looper.magnet_sound_until = None
 
             if looper.synth:
                 looper.synth.mute()

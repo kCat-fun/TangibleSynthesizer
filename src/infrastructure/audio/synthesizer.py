@@ -28,7 +28,7 @@ class SynthesizerSound:
 
     # 周波数範囲 (Hz)
     FREQ_MIN = 261.626  # C4 (Y_MIN側)
-    FREQ_MAX = 1975.533  # B6 (Y_MAX側)
+    FREQ_MAX = 987.767  # B5 (Y_MAX側)
 
     # オーディオ設定
     SAMPLE_RATE = 44100

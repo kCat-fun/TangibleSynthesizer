@@ -31,6 +31,10 @@ class ToioLooper:
         # 同期用
         self.is_ready_for_next_loop: bool = False
 
+        # toio3用: 磁石検知トリガー
+        self.was_magnet_detected: bool = False
+        self.magnet_sound_until: Optional[float] = None  # 音を鳴らす終了時刻
+
     def get_duration(self) -> float:
         """ループの長さを取得（秒）"""
         if self.frames:
@@ -42,3 +46,5 @@ class ToioLooper:
         self.is_position_valid = True
         self.position_lost_time = None
         self.is_ready_for_next_loop = False
+        self.was_magnet_detected = False
+        self.magnet_sound_until = None
