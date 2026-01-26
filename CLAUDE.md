@@ -31,9 +31,9 @@ pytest .
 - 一時停止中にボタンを押すと再記録
 - 複数toioが独立してループ再生（タイミング同期なし）
 - 各toioに異なる波形が割り当てられる:
-  - toio1: サイン波
-  - toio2: のこぎり波
-  - toio3: 矩形波
+  - toio1: サイン波（位置に応じて常時発音）
+  - toio2: のこぎり波（位置に応じて常時発音）
+  - toio3: 矩形波（磁石検知時のみ0.1秒間発音）
 - 終了時に記録データをJSONファイルに自動保存
 - 'q' + Enter で終了
 
@@ -101,8 +101,9 @@ data/
 - **Async-first**: asyncioでBLE通信を非同期処理
 - **Threading**: 音声合成は専用スレッドで実行（SynthesizerSound）
 - **Recording rate**: 50Hz（0.02秒間隔）で位置記録、閾値ベースのフィルタリング
-- **Audio mapping**: Y座標→周波数(261Hz〜1975Hz)、X座標→音量
+- **Audio mapping**: Y座標→周波数(261Hz〜988Hz、C4〜B5)、X座標→音量
 - **Wave types**: サイン波(SINE)、のこぎり波(SAWTOOTH)、矩形波(SQUARE)
+- **Magnet trigger**: toio3は磁石検知の立ち上がりエッジで0.1秒間だけ音を発生
 - **Position detection**: 位置検出できない間は音をミュート、記録時間を補正
 - **Data persistence**: 終了時に記録データをJSON形式で自動保存
 

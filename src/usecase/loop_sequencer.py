@@ -97,8 +97,8 @@ class LoopSequencerMode:
     """DTM風ループシーケンサモード"""
 
     RECORD_INTERVAL = 0.02  # 記録間隔 (50Hz)
-    PLAYBACK_POSITION_THRESHOLD = 8
-    PLAYBACK_ANGLE_THRESHOLD = 15
+    PLAYBACK_POSITION_THRESHOLD = 5
+    PLAYBACK_ANGLE_THRESHOLD = 10
 
     def __init__(self, toio_count: int):
         self.toio_count = toio_count

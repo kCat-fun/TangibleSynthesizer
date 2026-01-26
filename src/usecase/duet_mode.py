@@ -14,8 +14,8 @@ class DuetMode:
     """重奏モード: serve_toioの動きをrecive_toioが遅延追従"""
 
     RECORD_INTERVAL = 0.02  # 記録間隔（秒）= 50Hz
-    PLAYBACK_POSITION_THRESHOLD = 8
-    PLAYBACK_ANGLE_THRESHOLD = 15
+    PLAYBACK_POSITION_THRESHOLD = 5
+    PLAYBACK_ANGLE_THRESHOLD = 10
 
     def __init__(self):
         self.serve_controller: Optional[CubeController] = None

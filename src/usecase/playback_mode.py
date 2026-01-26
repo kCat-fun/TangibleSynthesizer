@@ -21,8 +21,8 @@ TOIO_COLORS = [
 class PlaybackMode:
     """保存データ再生モード"""
 
-    PLAYBACK_POSITION_THRESHOLD = 8
-    PLAYBACK_ANGLE_THRESHOLD = 15
+    PLAYBACK_POSITION_THRESHOLD = 5
+    PLAYBACK_ANGLE_THRESHOLD = 10
 
     def __init__(self):
         self.controllers: List[CubeController] = []
