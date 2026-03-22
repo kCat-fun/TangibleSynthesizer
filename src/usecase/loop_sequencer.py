@@ -3,7 +3,7 @@ import asyncio
 import json
 import os
 from datetime import datetime
-from typing import List, Dict, Optional
+from typing import List, Dict, Optional, Callable
 
 from toio import Color
 
@@ -100,14 +100,51 @@ class LoopSequencerMode:
     PLAYBACK_POSITION_THRESHOLD = 5
     PLAYBACK_ANGLE_THRESHOLD = 10
 
-    def __init__(self, toio_count: int):
+    def __init__(self, toio_count: int,
+                 log_callback: Optional[Callable[[str], None]] = None,
+                 quit_event: Optional[asyncio.Event] = None,
+                 state_callback: Optional[Callable[[int, str, dict], None]] = None,
+                 wave_types: Optional[List[WaveType]] = None,
+                 volumes: Optional[List[float]] = None):
         self.toio_count = toio_count
         self.controllers: List[CubeController] = []
         self.loopers: List[ToioLooper] = []
         self.button_events: Dict[int, asyncio.Event] = {}
-        self.quit_event = asyncio.Event()
+        self.quit_event = quit_event or asyncio.Event()
         self.synchronizer = LoopSynchronizer()
         self.input_thread = None
+        self._log = log_callback or print
+        self._state_callback = state_callback
+        self._gui_mode = log_callback is not None
+        self._wave_types = wave_types or [
+            TOIO_WAVE_TYPES[i % len(TOIO_WAVE_TYPES)] for i in range(toio_count)
+        ]
+        self._volumes = volumes or [1.0] * toio_count
+
+    def _notify_state(self, looper: ToioLooper, info: Optional[dict] = None):
+        """状態変更をGUIに通知"""
+        if self._state_callback:
+            state_name = looper.state.value.upper() if hasattr(looper.state, 'value') else str(looper.state)
+            self._state_callback(looper.index, state_name, info or {})
+
+    async def set_wave_type(self, index: int, wave_type: str):
+        """波形タイプを動的に変更"""
+        wave_type_map = {
+            "sine": WaveType.SINE,
+            "sawtooth": WaveType.SAWTOOTH,
+            "square": WaveType.SQUARE
+        }
+        if index < len(self._wave_types):
+            self._wave_types[index] = wave_type_map.get(wave_type, WaveType.SINE)
+        if index < len(self.loopers) and self.loopers[index].synth:
+            self.loopers[index].synth.set_wave_type(self._wave_types[index])
+
+    async def set_volume(self, index: int, volume: float):
+        """音量を動的に変更"""
+        if index < len(self._volumes):
+            self._volumes[index] = max(0.0, min(1.0, volume))
+        if index < len(self.loopers) and self.loopers[index].synth:
+            self.loopers[index].synth.set_max_volume(self._volumes[index])
 
     async def run(self):
         """メイン実行"""
@@ -118,9 +155,9 @@ class LoopSequencerMode:
 
     async def _connect_all(self):
         """全toioに接続"""
-        print("\n" + "=" * 50)
-        print("ループシーケンサモードを開始します")
-        print("=" * 50)
+        self._log("=" * 50)
+        self._log("ループシーケンサモードを開始します")
+        self._log("=" * 50)
 
         # toioコントローラーを作成
         for i in range(self.toio_count):
@@ -133,11 +170,11 @@ class LoopSequencerMode:
             self.controllers.append(controller)
 
         # 接続
-        print("\n全toioに接続中...")
+        self._log("全toioに接続中...")
         for controller in self.controllers:
             await controller.connect()
             await controller.set_indicator(color=Color(100, 100, 100))
-        print(f"✅ {self.toio_count}台のtoioに接続しました")
+        self._log(f"{self.toio_count}台のtoioに接続しました")
 
         # ToioLooperを作成
         for i, ctrl in enumerate(self.controllers):
@@ -145,10 +182,10 @@ class LoopSequencerMode:
 
         # 波形の割り当てを表示
         wave_names = {WaveType.SINE: "サイン波", WaveType.SAWTOOTH: "のこぎり波", WaveType.SQUARE: "矩形波"}
-        print("\n波形の割り当て:")
+        self._log("波形の割り当て:")
         for i in range(self.toio_count):
             wave_type = TOIO_WAVE_TYPES[i % len(TOIO_WAVE_TYPES)]
-            print(f"  toio_{i+1}: {wave_names[wave_type]}")
+            self._log(f"  toio_{i+1}: {wave_names[wave_type]}")
 
         self.synchronizer.set_loopers(self.loopers)
 
@@ -167,21 +204,24 @@ class LoopSequencerMode:
 
     async def _main_loop(self):
         """メインループ"""
-        loop = asyncio.get_event_loop()
-        self.input_thread = start_input_thread(self.quit_event, loop)
+        # GUIモードではstdinスレッドを起動しない
+        if not self._gui_mode:
+            loop = asyncio.get_event_loop()
+            self.input_thread = start_input_thread(self.quit_event, loop)
 
-        print("\n" + "=" * 50)
-        print("準備完了！")
-        print("=" * 50)
-        print("\n操作方法:")
-        print("  - toioのボタンを押す → 記録開始（赤LED）")
-        print("  - toioを手で動かして音を作成")
-        print("  - もう一度ボタンを押す → 記録終了、待機（黄LED）")
-        print("  - 待機中にボタンを押す → ループ再生開始（緑LED）")
-        print("  - 再生中にボタンを押す → 一時停止（黄LED）")
-        print("  - 一時停止中にボタンを押す → 再記録開始")
-        print("  - 終了するには 'q' を入力してEnter")
-        print("=" * 50)
+        self._log("=" * 50)
+        self._log("準備完了！")
+        self._log("=" * 50)
+        self._log("操作方法:")
+        self._log("  - toioのボタンを押す -> 記録開始（赤LED）")
+        self._log("  - toioを手で動かして音を作成")
+        self._log("  - もう一度ボタンを押す -> 記録終了、待機（黄LED）")
+        self._log("  - 待機中にボタンを押す -> ループ再生開始（緑LED）")
+        self._log("  - 再生中にボタンを押す -> 一時停止（黄LED）")
+        self._log("  - 一時停止中にボタンを押す -> 再記録開始")
+        if not self._gui_mode:
+            self._log("  - 終了するには 'q' を入力してEnter")
+        self._log("=" * 50)
 
         try:
             while not self.quit_event.is_set():
@@ -199,7 +239,7 @@ class LoopSequencerMode:
                 await asyncio.sleep(self.RECORD_INTERVAL)
 
         except KeyboardInterrupt:
-            print("\n🛑 Ctrl+Cで中断されました")
+            self._log("Ctrl+Cで中断されました")
 
     async def _record_position(self, looper: ToioLooper):
         """位置を記録"""
@@ -249,7 +289,7 @@ class LoopSequencerMode:
         """ボタン押下時の状態遷移処理"""
         if looper.state == ToioLoopState.IDLE:
             if any(l.state == ToioLoopState.RECORDING for l in self.loopers if l != looper):
-                print(f"⚠️ 他のtoioが記録中です")
+                self._log(f"他のtoioが記録中です")
                 return
             await self._start_recording(looper)
 
@@ -264,7 +304,7 @@ class LoopSequencerMode:
 
         elif looper.state == ToioLoopState.PAUSED:
             if any(l.state == ToioLoopState.RECORDING for l in self.loopers if l != looper):
-                print(f"⚠️ 他のtoioが記録中です")
+                self._log(f"他のtoioが記録中です")
                 return
             await self._start_recording(looper)
 
@@ -272,7 +312,7 @@ class LoopSequencerMode:
         """録音開始（0.5秒のカウントダウン後）"""
         # 準備中表示
         await looper.controller.set_indicator(color=Color(255, 255, 0))  # 黄色
-        print(f"⏳ {looper.controller.name} 0.5秒後に記録開始...")
+        self._log(f"{looper.controller.name} 0.5秒後に記録開始...")
         await asyncio.sleep(0.5)
 
         # 記録開始
@@ -284,14 +324,16 @@ class LoopSequencerMode:
         looper.reset_for_recording()
 
         if looper.synth is None:
-            wave_type = TOIO_WAVE_TYPES[looper.index % len(TOIO_WAVE_TYPES)]
-            looper.synth = SynthesizerSound(wave_type=wave_type)
+            wave_type = self._wave_types[looper.index] if looper.index < len(self._wave_types) else TOIO_WAVE_TYPES[looper.index % len(TOIO_WAVE_TYPES)]
+            volume = self._volumes[looper.index] if looper.index < len(self._volumes) else 1.0
+            looper.synth = SynthesizerSound(wave_type=wave_type, max_volume=volume)
             looper.synth.start()
         # toio3は磁石検知時のみ音を鳴らすのでここではunmuteしない
         if looper.index != 2:
             looper.synth.unmute()
 
-        print(f"🔴 {looper.controller.name} 記録開始 - toioを手で動かしてください")
+        self._log(f"{looper.controller.name} 記録開始 - toioを手で動かしてください")
+        self._notify_state(looper)
 
     async def _stop_recording(self, looper: ToioLooper):
         """録音終了して待機状態へ"""
@@ -303,21 +345,30 @@ class LoopSequencerMode:
             looper.synth.mute()
 
         if len(looper.frames) < 2:
-            print(f"⚠️ {looper.controller.name} 記録が短すぎます。やり直してください。")
+            self._log(f"{looper.controller.name} 記録が短すぎます。やり直してください。")
             looper.state = ToioLoopState.IDLE
             await looper.controller.set_indicator(color=Color(100, 100, 100))
+            self._notify_state(looper)
             return
 
         looper.state = ToioLoopState.WAITING
         await looper.controller.set_indicator(color=Color(255, 255, 0))
-        print(f"⏸️ {looper.controller.name} 記録完了 ({len(looper.frames)}フレーム, {looper.get_duration():.1f}秒) - ボタンを押すとループ再生開始")
+        self._log(f"{looper.controller.name} 記録完了 ({len(looper.frames)}フレーム, {looper.get_duration():.1f}秒) - ボタンを押すとループ再生開始")
+        self._notify_state(looper, {
+            'frame_count': len(looper.frames),
+            'duration': looper.get_duration()
+        })
 
     async def _start_playback(self, looper: ToioLooper):
         """ループ再生開始"""
         looper.state = ToioLoopState.PLAYING
         looper.stop_event.clear()
         looper.play_task = asyncio.create_task(self._playback_task(looper))
-        print(f"🟢 {looper.controller.name} ループ再生開始")
+        self._log(f"{looper.controller.name} ループ再生開始")
+        self._notify_state(looper, {
+            'frame_count': len(looper.frames),
+            'duration': looper.get_duration()
+        })
 
     async def _pause_looper(self, looper: ToioLooper):
         """ループ再生を一時停止"""
@@ -336,7 +387,8 @@ class LoopSequencerMode:
 
         self.synchronizer.update_max_duration()
         await looper.controller.set_indicator(color=Color(255, 255, 0))
-        print(f"⏸️ {looper.controller.name} 一時停止 - もう一度押すと再記録")
+        self._log(f"{looper.controller.name} 一時停止 - もう一度押すと再記録")
+        self._notify_state(looper)
 
     async def _playback_task(self, looper: ToioLooper):
         """ループ再生タスク（同期なしで独立して再生）"""
@@ -492,7 +544,7 @@ class LoopSequencerMode:
 
     async def _cleanup(self):
         """クリーンアップ"""
-        print("\nクリーンアップ中...")
+        self._log("クリーンアップ中...")
         self.quit_event.set()
 
         if self.input_thread and self.input_thread.is_alive():
@@ -511,9 +563,9 @@ class LoopSequencerMode:
         # 記録データを保存
         saved_path = self._save_recording()
         if saved_path:
-            print(f"📁 記録データを保存しました: {saved_path}")
+            self._log(f"記録データを保存しました: {saved_path}")
 
         for controller in self.controllers:
             await controller.disconnect()
 
-        print("✅ 終了しました")
+        self._log("終了しました")

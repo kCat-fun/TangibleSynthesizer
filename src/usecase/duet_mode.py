@@ -1,6 +1,6 @@
 """重奏モード: 指定秒数遅れで追従演奏"""
 import asyncio
-from typing import Optional
+from typing import Optional, Callable
 
 from toio.cube import Color
 
@@ -17,11 +17,21 @@ class DuetMode:
     PLAYBACK_POSITION_THRESHOLD = 5
     PLAYBACK_ANGLE_THRESHOLD = 10
 
-    def __init__(self):
+    def __init__(self,
+                 delay_seconds: Optional[float] = None,
+                 log_callback: Optional[Callable[[str], None]] = None,
+                 quit_event: Optional[asyncio.Event] = None):
         self.serve_controller: Optional[CubeController] = None
         self.receive_controller: Optional[CubeController] = None
-        self.delay_seconds: float = 2.0
+        self.delay_seconds: float = delay_seconds if delay_seconds is not None else 2.0
         self.button_pressed = asyncio.Event()
+        self._log = log_callback or print
+        self._gui_mode = log_callback is not None
+        self._preset_delay = delay_seconds is not None
+        if quit_event is not None:
+            self._external_quit = quit_event
+        else:
+            self._external_quit = None
 
         # 再生閾値用
         self.last_sent_x: Optional[int] = None
@@ -30,10 +40,11 @@ class DuetMode:
 
     async def run(self):
         """メイン実行"""
-        print("\n🎶 重奏モードを開始します")
+        self._log("重奏モードを開始します")
 
-        self.delay_seconds = input_delay_seconds()
-        print(f"✅ 遅延時間: {self.delay_seconds}秒")
+        if not self._preset_delay:
+            self.delay_seconds = input_delay_seconds()
+        self._log(f"遅延時間: {self.delay_seconds}秒")
 
         try:
             await self._connect()
@@ -53,7 +64,7 @@ class DuetMode:
         def button_handler(payload: bytearray):
             if len(payload) >= 2 and payload[0] == 0x01:
                 if payload[1] == 0x80:
-                    print("🔘 ボタンが押されました！終了します...")
+                    self._log("ボタンが押されました！終了します...")
                     self.button_pressed.set()
 
         await self.serve_controller.cube.api.button.register_notification_handler(button_handler)
@@ -69,7 +80,7 @@ class DuetMode:
         # ====================
         # Phase 1: 初期位置合わせ
         # ====================
-        print("\n📍 Phase 1: recive_toioをserve_toioの位置に移動")
+        self._log("Phase 1: recive_toioをserve_toioの位置に移動")
         pos = await self.serve_controller.sensing.get_position()
         if pos:
             await self.receive_controller.action.move_position(
@@ -82,16 +93,16 @@ class DuetMode:
             self.serve_controller.set_indicator(color=Color(0, 255, 0)),
             self.receive_controller.set_indicator(color=Color(0, 255, 0))
         )
-        print("✅ 初期位置合わせ完了")
+        self._log("初期位置合わせ完了")
         await asyncio.sleep(1)
 
         # ====================
         # Phase 2: 重奏モード開始
         # ====================
-        print("\n🎶 Phase 2: 重奏モード")
-        print(f"  serve_toioを手で動かしてください")
-        print(f"  recive_toioが{self.delay_seconds}秒遅れで追従します")
-        print("  LEDボタンを押すと終了")
+        self._log("Phase 2: 重奏モード")
+        self._log(f"  serve_toioを手で動かしてください")
+        self._log(f"  recive_toioが{self.delay_seconds}秒遅れで追従します")
+        self._log("  LEDボタンを押すと終了")
 
         # LED設定
         await self.serve_controller.set_indicator(color=Color(0, 100, 255))  # 青 = メイン
@@ -115,6 +126,10 @@ class DuetMode:
 
         try:
             while not self.button_pressed.is_set():
+                # 外部quit_eventもチェック
+                if self._external_quit and self._external_quit.is_set():
+                    break
+
                 current_time = loop.time() - start_time
 
                 # serve_toioの位置を取得・記録
@@ -131,7 +146,7 @@ class DuetMode:
 
                 # 磁石検知で表示（状態変化時のみ）
                 if magnet_detected and not serve_magnet_was_detected:
-                    print(f"🧲 serve_toio 磁石検出！")
+                    self._log(f"serve_toio 磁石検出！")
                     await self.serve_controller.set_indicator(color=Color(255, 0, 0))
                 elif not magnet_detected and serve_magnet_was_detected:
                     await self.serve_controller.set_indicator(color=Color(0, 100, 255))
@@ -170,7 +185,7 @@ class DuetMode:
             receive_sound.stop()
             recorder.stop_recording()
 
-        print("\n✅ 重奏モード終了！")
+        self._log("重奏モード終了！")
 
     def _should_move(self, target_x: int, target_y: int, target_angle: int) -> bool:
         """移動すべきか判定（閾値ベース）"""

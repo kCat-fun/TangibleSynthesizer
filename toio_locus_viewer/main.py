@@ -14,11 +14,11 @@ import numpy as np
 # A4比率 (210mm x 297mm)
 A4_RATIO = 297 / 210  # 約1.414
 
-# toioプレイマットの座標範囲（標準マット）
-PLAYMAT_X_MIN = 45
-PLAYMAT_X_MAX = 455
-PLAYMAT_Y_MIN = 45
-PLAYMAT_Y_MAX = 455
+# toioプレイマットの座標範囲
+PLAYMAT_X_MIN = 103
+PLAYMAT_X_MAX = 241
+PLAYMAT_Y_MIN = 149
+PLAYMAT_Y_MAX = 351
 
 # 各toioの色
 COLORS = ['#E74C3C', '#3498DB', '#2ECC71', '#F39C12', '#9B59B6']
@@ -61,9 +61,9 @@ def normalize_coordinates(frames: list, mat_width: float, mat_height: float) -> 
     x_coords = [f['x'] for f in frames]
     y_coords = [f['y'] for f in frames]
     
-    # プレイマット座標を0-1に正規化
+    # プレイマット座標を正規化（Y軸はマット上で下が正なので反転）
     x_norm = [(x - PLAYMAT_X_MIN) / (PLAYMAT_X_MAX - PLAYMAT_X_MIN) * mat_width for x in x_coords]
-    y_norm = [(y - PLAYMAT_Y_MIN) / (PLAYMAT_Y_MAX - PLAYMAT_Y_MIN) * mat_height for y in y_coords]
+    y_norm = [(PLAYMAT_Y_MAX - y) / (PLAYMAT_Y_MAX - PLAYMAT_Y_MIN) * mat_height for y in y_coords]
     
     return x_norm, y_norm
 
@@ -128,7 +128,7 @@ def visualize_trajectories(data: dict, output_path: str = None):
                                        arrowprops=dict(arrowstyle='->', color=color, lw=1.5))
             
             # タイトルと情報
-            ax.set_title(f'{name}\n({wave_type})', fontsize=11, fontweight='bold', color=color)
+            ax.set_title(f'{name}\n({wave_type})', fontsize=18, fontweight='bold', color=color)
             
             # フレーム数と時間情報
             if frames:

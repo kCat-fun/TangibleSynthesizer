@@ -13,8 +13,11 @@ toioロボットキューブを使った音楽プログラム。複数のtoio（
 source .venv/bin/activate  # Linux/Mac
 .venv\Scripts\activate     # Windows
 
-# Run the application
+# Run the application (CUI)
 python src/main.py
+
+# Run the application (GUI)
+python src/main_gui.py
 
 # Run tests
 pytest .
@@ -69,7 +72,20 @@ Clean Architecture に基づく構造:
 
 ```
 src/
-├── main.py                           # エントリーポイント（モード選択のみ）
+├── main.py                           # CUIエントリーポイント（モード選択のみ）
+├── main_gui.py                       # GUIエントリーポイント（tkinter）
+├── gui/                              # GUI層（tkinter）
+│   ├── app.py                        # ToioMusicApp（メインウィンドウ、フレーム管理）
+│   ├── async_bridge.py               # AsyncBridge（asyncio-tkinter統合）
+│   ├── widgets/                      # 再利用可能なウィジェット
+│   │   ├── log_panel.py              # LogPanel（ログ表示）
+│   │   └── status_bar.py             # StatusBar（ステータスバー）
+│   └── frames/                       # モード別GUI画面
+│       ├── mode_select_frame.py      # モード選択画面
+│       ├── loop_sequencer_frame.py   # ループシーケンサ画面
+│       ├── duet_frame.py             # 重奏モード画面
+│       ├── debug_frame.py            # 動作確認画面
+│       └── playback_frame.py         # 保存データ再生画面
 ├── infrastructure/                   # 外部サービス層
 │   ├── toio/                         # toio BLE通信
 │   │   ├── cube_controller.py        # 接続管理、LED制御
@@ -85,12 +101,12 @@ src/
 │   └── looper/                       # ループ制御
 │       ├── state.py                  # ToioLoopState（IDLE/RECORDING/WAITING/PLAYING/PAUSED）
 │       └── toio_looper.py            # ToioLooper（各toioのループ管理）
-└── usecase/                          # ユースケース層
+└── usecase/                          # ユースケース層（CUI/GUI両対応）
     ├── loop_sequencer.py             # LoopSequencerMode（DTM風モード）
     ├── duet_mode.py                  # DuetMode（重奏モード）
     ├── debug_mode.py                 # DebugMode（動作確認モード）
     ├── playback_mode.py              # PlaybackMode（保存データ再生モード）
-    └── ui.py                         # UI関数、toioアドレス設定
+    └── ui.py                         # CUI用UI関数、toioアドレス設定
 
 data/
 └── recordings/                       # 記録データ保存先（JSON形式）

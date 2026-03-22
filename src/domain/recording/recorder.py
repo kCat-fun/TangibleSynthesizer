@@ -9,7 +9,7 @@ from .frame import RecordedFrame
 class MotionRecorder:
     """動きを記録するクラス"""
     # toioの速度範囲（APIの仕様: 10-2560、実用範囲は10-100程度）
-    MIN_SPEED = 50
+    MIN_SPEED = 30
     MAX_SPEED = 100
 
     def __init__(self, position_threshold: int = 5, angle_threshold: int = 10):

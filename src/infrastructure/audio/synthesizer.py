@@ -34,9 +34,12 @@ class SynthesizerSound:
     SAMPLE_RATE = 44100
     CHUNK_SIZE = 1024
 
-    def __init__(self, wave_type: WaveType = WaveType.SINE):
+    def __init__(self, wave_type: WaveType = WaveType.SINE, max_volume: float = 1.0):
         # 波形タイプ
         self._wave_type = wave_type
+
+        # 最大音量（0.0 ~ 1.0）
+        self._max_volume: float = max(0.0, min(1.0, max_volume))
 
         # 現在の周波数と音量（スレッド間で共有）
         self._current_frequency: float = (self.FREQ_MIN + self.FREQ_MAX) / 2
@@ -118,7 +121,8 @@ class SynthesizerSound:
             try:
                 with self._lock:
                     frequency = self._current_frequency
-                    volume = 0.0 if self._muted else self._current_volume
+                    # 座標による音量に最大音量を掛け合わせる
+                    volume = 0.0 if self._muted else self._current_volume * self._max_volume
 
                 # 正弦波サンプルを生成
                 samples = self._generate_samples(frequency, volume)
@@ -139,6 +143,26 @@ class SynthesizerSound:
         with self._lock:
             self._muted = False
 
+    def set_max_volume(self, volume: float):
+        """最大音量を設定（0.0 ~ 1.0）"""
+        with self._lock:
+            self._max_volume = max(0.0, min(1.0, volume))
+
+    def get_max_volume(self) -> float:
+        """現在の最大音量を取得"""
+        with self._lock:
+            return self._max_volume
+
+    def set_wave_type(self, wave_type: WaveType):
+        """波形タイプを変更"""
+        with self._lock:
+            self._wave_type = wave_type
+
+    def get_wave_type(self) -> WaveType:
+        """現在の波形タイプを取得"""
+        with self._lock:
+            return self._wave_type
+
     def _clamp(self, value: float, min_val: float, max_val: float) -> float:
         """値を範囲内に制限"""
         return max(min_val, min(max_val, value))
@@ -156,8 +180,8 @@ class SynthesizerSound:
         x = self._clamp(x, self.X_MIN, self.X_MAX)
         y = self._clamp(y, self.Y_MIN, self.Y_MAX)
 
-        # Y座標から周波数を計算（Y_MIN: FREQ_MIN, Y_MAX: FREQ_MAX）
-        frequency = self._map_value(y, self.Y_MIN, self.Y_MAX, self.FREQ_MIN, self.FREQ_MAX)
+        # Y座標から周波数を計算（Y_MIN: FREQ_MAX, Y_MAX: FREQ_MIN）
+        frequency = self._map_value(y, self.Y_MIN, self.Y_MAX, self.FREQ_MAX, self.FREQ_MIN)
 
         # X座標から音量を計算（X_MIN: 0, X_MAX: 1.0）
         volume = self._map_value(x, self.X_MIN, self.X_MAX, 0.0, 1.0)

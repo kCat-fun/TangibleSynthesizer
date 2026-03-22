@@ -1,6 +1,6 @@
 """動作確認モード"""
 import asyncio
-from typing import Optional
+from typing import Optional, Callable
 
 from toio.cube import Color
 
@@ -11,24 +11,34 @@ from .ui import TOIO_ADDRESSES
 class DebugMode:
     """動作確認用モード（1台のtoioを使用）"""
 
-    def __init__(self):
+    def __init__(self,
+                 log_callback: Optional[Callable[[str], None]] = None,
+                 quit_event: Optional[asyncio.Event] = None,
+                 gui_mode: bool = False):
         self.controller: Optional[CubeController] = None
+        self._log = log_callback or print
+        self._quit_event = quit_event or asyncio.Event()
+        self._gui_mode = gui_mode
 
     async def run(self):
         """メイン実行"""
-        print("\n" + "=" * 50)
-        print("動作確認モード")
-        print("=" * 50)
+        self._log("=" * 50)
+        self._log("動作確認モード")
+        self._log("=" * 50)
 
         try:
             await self._connect()
+            if self._gui_mode:
+                # GUIモードではメニューループは使わず、外部からサブモードを呼び出す
+                return
             await self._show_debug_menu()
         finally:
-            await self._cleanup()
+            if not self._gui_mode:
+                await self._cleanup()
 
     async def _connect(self):
         """toio接続"""
-        print("\ntoioに接続中...")
+        self._log("toioに接続中...")
         self.controller = CubeController(
             address=TOIO_ADDRESSES[0],
             name="debug_toio",
@@ -36,20 +46,20 @@ class DebugMode:
         )
         await self.controller.connect()
         await self.controller.set_indicator(color=Color(0, 255, 0))  # 緑 = 接続完了
-        print("✅ 接続完了")
+        self._log("接続完了")
 
     async def _show_debug_menu(self):
-        """デバッグメニュー表示"""
+        """デバッグメニュー表示（CUIモード）"""
         while True:
-            print("\n" + "-" * 40)
-            print("動作確認メニュー")
-            print("-" * 40)
-            print("  1: 座標取得（リアルタイム表示）")
-            print("  2: 磁石検知（リアルタイム表示）")
-            print("  3: notification磁石検知（リアルタイム表示）")
-            print("  4: 座標移動（入力した座標へ移動）")
-            print("  q: 終了")
-            print("-" * 40)
+            self._log("-" * 40)
+            self._log("動作確認メニュー")
+            self._log("-" * 40)
+            self._log("  1: 座標取得（リアルタイム表示）")
+            self._log("  2: 磁石検知（リアルタイム表示）")
+            self._log("  3: notification磁石検知（リアルタイム表示）")
+            self._log("  4: 座標移動（入力した座標へ移動）")
+            self._log("  q: 終了")
+            self._log("-" * 40)
 
             try:
                 choice = input("選択: ").strip().lower()
@@ -62,21 +72,21 @@ class DebugMode:
                 elif choice == "4":
                     await self._move_to_position()
                 elif choice == "q":
-                    print("動作確認モードを終了します")
+                    self._log("動作確認モードを終了します")
                     break
                 else:
-                    print("⚠️ 1, 2, 3, または q を入力してください")
+                    self._log("1, 2, 3, 4, または q を入力してください")
             except KeyboardInterrupt:
-                print("\n終了します")
+                self._log("終了します")
                 break
 
     async def _position_check(self):
         """座標取得モード"""
-        print("\n" + "=" * 50)
-        print("座標取得モード")
-        print("  toioを動かすと座標がリアルタイム表示されます")
-        print("  Enter を押すと終了")
-        print("=" * 50)
+        self._log("=" * 50)
+        self._log("座標取得モード")
+        self._log("  toioを動かすと座標がリアルタイム表示されます")
+        self._log("  Enter を押すと終了")
+        self._log("=" * 50)
 
         # 青LED = 座標取得中
         await self.controller.set_indicator(color=Color(0, 100, 255))
@@ -91,13 +101,13 @@ class DebugMode:
                 if pos:
                     # 位置が変わった時だけ表示
                     if last_pos is None or pos.x != last_pos.x or pos.y != last_pos.y or pos.angle != last_pos.angle:
-                        print(f"  X: {pos.x:4d}  Y: {pos.y:4d}  角度: {pos.angle:3d}°")
+                        self._log(f"  X: {pos.x:4d}  Y: {pos.y:4d}  角度: {pos.angle:3d}")
                         last_pos = pos
                         # 位置検出OK = 緑点滅
                         await self.controller.set_indicator(color=Color(0, 255, 0))
                 else:
                     if last_pos is not None:
-                        print("  ⚠️ 位置検出できません（マットから外れている可能性）")
+                        self._log("  位置検出できません（マットから外れている可能性）")
                         last_pos = None
                         # 位置検出NG = 赤
                         await self.controller.set_indicator(color=Color(255, 0, 0))
@@ -111,15 +121,15 @@ class DebugMode:
         await task
 
         await self.controller.set_indicator(color=Color(0, 255, 0))
-        print("座標取得モード終了")
+        self._log("座標取得モード終了")
 
     async def _magnet_check(self):
         """磁石検知モード"""
-        print("\n" + "=" * 50)
-        print("磁石検知モード")
-        print("  toioの下に磁石を近づけると検知します")
-        print("  Enter を押すと終了")
-        print("=" * 50)
+        self._log("=" * 50)
+        self._log("磁石検知モード")
+        self._log("  toioの下に磁石を近づけると検知します")
+        self._log("  Enter を押すと終了")
+        self._log("=" * 50)
 
         # シアンLED = 磁石検知モード
         await self.controller.set_indicator(color=Color(0, 255, 255))
@@ -133,7 +143,6 @@ class DebugMode:
                 try:
                     # 磁気センサー情報を直接リクエスト
                     await self.controller.cube.api.sensor.request_magnetic_sensor_information()
-                    # await asyncio.sleep(0.05)  # レスポンス待ち
 
                     # 磁気センサーの生データを取得
                     sensor = self.controller.sensing.get_magnetic_sensor()
@@ -146,15 +155,14 @@ class DebugMode:
                     # 状態変化時のみ表示
                     if magnet_detected != last_state:
                         if magnet_detected:
-                            print(f"  🧲 磁石検知！ (state={magnet_state}, strength={strength})")
+                            self._log(f"  磁石検知！ (state={magnet_state}, strength={strength})")
                             await self.controller.set_indicator(color=Color(255, 0, 255))  # マゼンタ
                         else:
-                            print("  ○ 磁石なし")
+                            self._log("  磁石なし")
                             await self.controller.set_indicator(color=Color(0, 255, 255))  # シアン
                         last_state = magnet_detected
                 except Exception as e:
-                    print(f"  エラー: {e}")
-                # await asyncio.sleep(0.05)
+                    self._log(f"  エラー: {e}")
 
         task = asyncio.create_task(magnet_loop())
 
@@ -163,16 +171,15 @@ class DebugMode:
         await task
 
         await self.controller.set_indicator(color=Color(0, 255, 0))
-        print("磁石検知モード終了")
+        self._log("磁石検知モード終了")
 
     async def _notification_handler_magnetic_sensor(self):
         """磁気センサー通知ハンドラ"""
-        """磁石検知モード"""
-        print("\n" + "=" * 50)
-        print("notification磁石検知モード")
-        print("  toioの下に磁石を近づけると検知します")
-        print("  Enter を押すと終了")
-        print("=" * 50)
+        self._log("=" * 50)
+        self._log("notification磁石検知モード")
+        self._log("  toioの下に磁石を近づけると検知します")
+        self._log("  Enter を押すと終了")
+        self._log("=" * 50)
 
         # シアンLED = 磁石検知モード
         await self.controller.set_indicator(color=Color(0, 255, 255))
@@ -195,30 +202,29 @@ class DebugMode:
                     # 状態変化時のみ表示
                     if magnet_detected != last_state:
                         if magnet_detected:
-                            print(f"  🧲 磁石検知！ (state={magnet_state}, strength={strength})")
+                            self._log(f"  磁石検知！ (state={magnet_state}, strength={strength})")
                             await self.controller.set_indicator(color=Color(255, 0, 255))  # マゼンタ
                         else:
-                            print("  ○ 磁石なし")
+                            self._log("  磁石なし")
                             await self.controller.set_indicator(color=Color(0, 255, 255))  # シアン
                         last_state = magnet_detected
                 except Exception as e:
-                    print(f"  エラー: {e}")
-                # await asyncio.sleep(0.05)
+                    self._log(f"  エラー: {e}")
 
         task = asyncio.create_task(magnet_loop())
 
         await asyncio.get_event_loop().run_in_executor(None, input, "")
         stop_event.set()
-        await task        
+        await task
 
     async def _move_to_position(self):
         """座標移動モード"""
-        print("\n" + "=" * 50)
-        print("座標移動モード")
-        print("  座標を入力するとtoioがその位置に移動します")
-        print("  マット座標範囲: X(45-455), Y(45-455)")
-        print("  'q' で終了")
-        print("=" * 50)
+        self._log("=" * 50)
+        self._log("座標移動モード")
+        self._log("  座標を入力するとtoioがその位置に移動します")
+        self._log("  マット座標範囲: X(45-455), Y(45-455)")
+        self._log("  'q' で終了")
+        self._log("=" * 50)
 
         # 黄LED = 座標入力待ち
         await self.controller.set_indicator(color=Color(255, 255, 0))
@@ -228,7 +234,7 @@ class DebugMode:
                 # 現在位置を表示
                 pos = await self.controller.sensing.get_position()
                 if pos:
-                    print(f"\n現在位置: X={pos.x}, Y={pos.y}, 角度={pos.angle}°")
+                    self._log(f"現在位置: X={pos.x}, Y={pos.y}, 角度={pos.angle}")
 
                 # X座標入力
                 x_input = input("X座標 (45-455, qで終了): ").strip()
@@ -236,7 +242,7 @@ class DebugMode:
                     break
                 x = int(x_input)
                 if not (45 <= x <= 455):
-                    print("⚠️ X座標は45-455の範囲で入力してください")
+                    self._log("X座標は45-455の範囲で入力してください")
                     continue
 
                 # Y座標入力
@@ -245,7 +251,7 @@ class DebugMode:
                     break
                 y = int(y_input)
                 if not (45 <= y <= 455):
-                    print("⚠️ Y座標は45-455の範囲で入力してください")
+                    self._log("Y座標は45-455の範囲で入力してください")
                     continue
 
                 # 角度入力（オプション）
@@ -258,7 +264,7 @@ class DebugMode:
                     angle = int(angle_input) % 360
 
                 # 移動開始
-                print(f"\n移動中... → X={x}, Y={y}, 角度={angle}°")
+                self._log(f"移動中... -> X={x}, Y={y}, 角度={angle}")
                 await self.controller.set_indicator(color=Color(255, 100, 0))  # オレンジ = 移動中
 
                 await self.controller.action.move_position(x=x, y=y, angle=angle, speed=50)
@@ -276,22 +282,22 @@ class DebugMode:
                 # 到着確認
                 pos = await self.controller.sensing.get_position()
                 if pos:
-                    print(f"✅ 到着: X={pos.x}, Y={pos.y}, 角度={pos.angle}°")
+                    self._log(f"到着: X={pos.x}, Y={pos.y}, 角度={pos.angle}")
                     await self.controller.set_indicator(color=Color(0, 255, 0))  # 緑 = 完了
                 else:
-                    print("⚠️ 位置を確認できません")
+                    self._log("位置を確認できません")
                     await self.controller.set_indicator(color=Color(255, 0, 0))  # 赤 = エラー
 
                 await asyncio.sleep(0.5)
                 await self.controller.set_indicator(color=Color(255, 255, 0))  # 黄に戻す
 
             except ValueError:
-                print("⚠️ 数値を入力してください")
+                self._log("数値を入力してください")
             except KeyboardInterrupt:
                 break
 
         await self.controller.set_indicator(color=Color(0, 255, 0))
-        print("座標移動モード終了")
+        self._log("座標移動モード終了")
 
     async def _cleanup(self):
         """クリーンアップ"""
@@ -299,4 +305,4 @@ class DebugMode:
             await self.controller.set_indicator(color=Color(100, 100, 100))
             await asyncio.sleep(0.5)
             await self.controller.disconnect()
-            print("切断完了")
+            self._log("切断完了")

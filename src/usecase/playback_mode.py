@@ -2,7 +2,7 @@
 import asyncio
 import json
 import os
-from typing import List, Dict, Optional
+from typing import List, Dict, Optional, Callable
 
 from toio import Color
 
@@ -24,22 +24,54 @@ class PlaybackMode:
     PLAYBACK_POSITION_THRESHOLD = 5
     PLAYBACK_ANGLE_THRESHOLD = 10
 
-    def __init__(self):
+    def __init__(self,
+                 log_callback: Optional[Callable[[str], None]] = None,
+                 quit_event: Optional[asyncio.Event] = None,
+                 filepath: Optional[str] = None,
+                 volumes: Optional[List[float]] = None):
         self.controllers: List[CubeController] = []
         self.synths: List[Optional[SynthesizerSound]] = []
         self.frames_data: List[List[RecordedFrame]] = []
         self.wave_types: List[WaveType] = []
-        self.quit_event = asyncio.Event()
+        self.quit_event = quit_event or asyncio.Event()
         self.input_thread = None
         self.toio_count = 0
         # toio3用: 磁石検知トリガー
         self.was_magnet_detected: List[bool] = []
         self.magnet_sound_until: List[Optional[float]] = []
+        self._log = log_callback or print
+        self._gui_mode = log_callback is not None
+        self._preset_filepath = filepath
+        self._volumes = volumes  # GUI から渡される音量設定
+
+    async def set_wave_type(self, index: int, wave_type: str):
+        """波形タイプを動的に変更"""
+        wave_type_map = {
+            "sine": WaveType.SINE,
+            "sawtooth": WaveType.SAWTOOTH,
+            "square": WaveType.SQUARE
+        }
+        if index < len(self.wave_types):
+            self.wave_types[index] = wave_type_map.get(wave_type, WaveType.SINE)
+        if index < len(self.synths) and self.synths[index]:
+            self.synths[index].set_wave_type(self.wave_types[index])
+
+    async def set_volume(self, index: int, volume: float):
+        """音量を動的に変更"""
+        if self._volumes is None:
+            self._volumes = [1.0] * self.toio_count
+        if index < len(self._volumes):
+            self._volumes[index] = max(0.0, min(1.0, volume))
+        if index < len(self.synths) and self.synths[index]:
+            self.synths[index].set_max_volume(self._volumes[index])
 
     async def run(self):
         """メイン実行"""
         # ファイル選択
-        filepath = self._select_recording_file()
+        if self._preset_filepath:
+            filepath = self._preset_filepath
+        else:
+            filepath = self._select_recording_file()
         if not filepath:
             return
 
@@ -61,25 +93,25 @@ class PlaybackMode:
         return os.path.join(os.path.dirname(__file__), "..", "..", "data", "recordings")
 
     def _select_recording_file(self) -> Optional[str]:
-        """保存ファイルを選択"""
+        """保存ファイルを選択（CUIモード）"""
         recordings_dir = self._get_recordings_dir()
 
         if not os.path.exists(recordings_dir):
-            print("保存データがありません")
+            self._log("保存データがありません")
             return None
 
         # JSONファイル一覧を取得
         files = sorted([f for f in os.listdir(recordings_dir) if f.endswith(".json")], reverse=True)
         if not files:
-            print("保存データがありません")
+            self._log("保存データがありません")
             return None
 
-        print("\n" + "=" * 50)
-        print("保存データを選択してください")
-        print("=" * 50)
+        self._log("=" * 50)
+        self._log("保存データを選択してください")
+        self._log("=" * 50)
         for i, f in enumerate(files[:10], 1):  # 最新10件を表示
-            print(f"  {i}: {f}")
-        print("=" * 50)
+            self._log(f"  {i}: {f}")
+        self._log("=" * 50)
 
         while True:
             try:
@@ -87,11 +119,11 @@ class PlaybackMode:
                 idx = int(choice) - 1
                 if 0 <= idx < min(len(files), 10):
                     return os.path.join(recordings_dir, files[idx])
-                print("⚠️ 有効な番号を入力してください")
+                self._log("有効な番号を入力してください")
             except ValueError:
-                print("⚠️ 数値を入力してください")
+                self._log("数値を入力してください")
             except KeyboardInterrupt:
-                print("\nキャンセルされました")
+                self._log("キャンセルされました")
                 return None
 
     def _load_recording(self, filepath: str) -> bool:
@@ -124,22 +156,22 @@ class PlaybackMode:
                 self.frames_data.append(frames)
                 self.wave_types.append(wave_type_map.get(toio_data["wave_type"], WaveType.SINE))
 
-            print(f"✅ データ読み込み完了: {self.toio_count}台分")
+            self._log(f"データ読み込み完了: {self.toio_count}台分")
             for i, frames in enumerate(self.frames_data):
                 if frames:
-                    print(f"  toio_{i+1}: {len(frames)}フレーム, {frames[-1].timestamp:.1f}秒")
+                    self._log(f"  toio_{i+1}: {len(frames)}フレーム, {frames[-1].timestamp:.1f}秒")
                 else:
-                    print(f"  toio_{i+1}: データなし")
+                    self._log(f"  toio_{i+1}: データなし")
 
             return True
 
         except Exception as e:
-            print(f"❌ データ読み込みエラー: {e}")
+            self._log(f"データ読み込みエラー: {e}")
             return False
 
     async def _connect_all(self):
         """全toioに接続"""
-        print("\n全toioに接続中...")
+        self._log("全toioに接続中...")
 
         for i in range(self.toio_count):
             name = f"toio_{i+1}"
@@ -152,11 +184,12 @@ class PlaybackMode:
             await controller.connect()
             await controller.set_indicator(color=Color(100, 100, 100))
 
-        print(f"✅ {self.toio_count}台のtoioに接続しました")
+        self._log(f"{self.toio_count}台のtoioに接続しました")
 
         # シンセサイザーを初期化
         for i in range(self.toio_count):
-            synth = SynthesizerSound(wave_type=self.wave_types[i])
+            volume = self._volumes[i] if self._volumes and i < len(self._volumes) else 1.0
+            synth = SynthesizerSound(wave_type=self.wave_types[i], max_volume=volume)
             synth.start()
             self.synths.append(synth)
             # toio3用: 磁石検知状態を初期化
@@ -165,13 +198,16 @@ class PlaybackMode:
 
     async def _playback_loop(self):
         """再生ループ"""
-        loop = asyncio.get_event_loop()
-        self.input_thread = start_input_thread(self.quit_event, loop)
+        # GUIモードではstdinスレッドを起動しない
+        if not self._gui_mode:
+            loop = asyncio.get_event_loop()
+            self.input_thread = start_input_thread(self.quit_event, loop)
 
-        print("\n" + "=" * 50)
-        print("再生開始！")
-        print("  - 'q' を入力して終了")
-        print("=" * 50)
+        self._log("=" * 50)
+        self._log("再生開始！")
+        if not self._gui_mode:
+            self._log("  - 'q' を入力して終了")
+        self._log("=" * 50)
 
         # 各toioの再生タスクを開始
         tasks = []
@@ -294,7 +330,7 @@ class PlaybackMode:
 
     async def _cleanup(self):
         """クリーンアップ"""
-        print("\nクリーンアップ中...")
+        self._log("クリーンアップ中...")
         self.quit_event.set()
 
         if self.input_thread and self.input_thread.is_alive():
@@ -307,4 +343,4 @@ class PlaybackMode:
         for controller in self.controllers:
             await controller.disconnect()
 
-        print("✅ 終了しました")
+        self._log("終了しました")
